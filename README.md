@@ -1,6 +1,6 @@
 # Distributing an application with embedded Python on a Mac
 
-This document explains how to embed an isolated Python distribution within a host application on MacOS. It assumes your version number is 3.6.1 for throughout. That can be changed by replacing e.g. `3.6.1` -> `3.7.0`, `3.6` -> `3.7`, and `python36` -> `python37` throughout.
+This document explains how to embed an isolated Python distribution within a host application on MacOS. For concreteness, it assumes your version number is `3.6.1`. That can be changed by replacing e.g. `3.6.1` -> `3.7.0`, `3.6` -> `3.7`, and `python36` -> `python37` throughout.
 
 
 We have two main goals:
@@ -31,14 +31,14 @@ You might want to store that directory in a shell variable called `$pydist`.
     cp -r $pydist/Python python36
     cp -r $pydist/lib/python3.6/lib-dynload python36
 
-The last line copies the contents of Python's `lib-dynload` directory. It contains shared object files for libraries like `zlib` and `cmath`. In the end we can reduce the size of this directory (from ~12 MB to less than 1) by removing libraries we don't need. But for now just copy the whole thing. Your `python36` directory should now contain the following files:
+The last line copies the contents of Python's `lib-dynload` directory. It contains shared object files for libraries like `zlib` and `cmath`. In the end we can reduce the size of this directory (it's ~12 MB) by removing libraries we don't need. But for now just copy the whole thing. Your `python36` directory should now contain the following files:
 
     include
     Python
     lib-dynload
     python36.zip
 
-In order to use the Python shared library on a different system, we need to bundle it with the application. We also need to modify the shared library itself to reflect its migration from the path specific to your system, to the application bundle. Rename the shared library's `id` attribute to reflects this:
+In order to use the Python shared library on a different system, we need to bundle it with the application. We also need to modify the shared library itself to reflect its migration from the path specific to your system, to the application bundle. Rename the shared library's `id` attribute to reflect this:
 
     chmod u+w python36/Python
     install_name_tool -id @executable_path/../Resources/python36/Python python36/Python
@@ -64,15 +64,17 @@ However, if Python initializes properly, that's only because it happened to loca
 
 The final step is to inform Python of where it can find its runtime resources. This needs to be done just before initializing the interpreter. The Objective C++ code below locates `python36` in the bundle, sets the Python path accordingly, and then initializes the interpreter.
 
-    NSURL* python36 = [[NSBundle mainBundle] URLForResource:@"python36" withExtension:nil];
-    NSURL* dynload = [python36 URLByAppendingPathComponent:@"lib-dynload"];
-    NSURL* zipfile = [python36 URLByAppendingPathComponent:@"python36.zip"];
-    NSString* pythonPath = [@[dynload.path, zipfile.path] componentsJoinedByString:@":"];
+```Objective-C++
+NSURL* python36 = [[NSBundle mainBundle] URLForResource:@"python36" withExtension:nil];
+NSURL* dynload = [python36 URLByAppendingPathComponent:@"lib-dynload"];
+NSURL* zipfile = [python36 URLByAppendingPathComponent:@"python36.zip"];
+NSString* pythonPath = [@[dynload.path, zipfile.path] componentsJoinedByString:@":"];
 
-    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-    std::wstring pythonPathWide = converter.from_bytes(pythonPath.UTF8String);
+std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+std::wstring pythonPathWide = converter.from_bytes(pythonPath.UTF8String);
 
-    Py_SetPath(pythonPathWide.data());
-    Py_Initialize();
+Py_SetPath(pythonPathWide.data());
+Py_Initialize();
+```
 
-Note that we had to do some conversion to UTF16 encoding and a wide character type. The C++ code to accomplish that requires the `locale` and `codecvt` headers to be included.
+Note that we had to do some conversion to `UTF16` character encoding to match the Python 3 C API. The C++ code to accomplish that requires the `locale` and `codecvt` headers to be included.
